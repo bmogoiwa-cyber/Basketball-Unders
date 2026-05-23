@@ -1,1 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Basketball Under & Parlay Predictor</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #121214;
+            color: #e2e8f0;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #4ade80;
+            margin-bottom: 30px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        @media (min-width: 768px) {
+            .grid { grid-template-columns: 2fr 1fr; }
+        }
+        .card {
+            background-color: #1e1e24;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #2d2d36;
+        }
+        .card h2 {
+            margin-top: 0;
+            font-size: 1.3rem;
+            border-bottom: 2px solid #2d2d36;
+            padding-bottom: 10px;
+            color: #60a5fa;
+        }
+        .game-row {
+            display: grid;
+            grid-template-columns: 2fr repeat(4, 1fr);
+            gap: 10px;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #2d2d36;
+        }
+        .header-row {
+            font-weight: bold;
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+        input[type="number"] {
+            width: 100%;
+            background-color: #2d2d36;
+            border: 1px solid #475569;
+            color: #fff;
+            padding: 6px;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        .badge-under { background-color: #166534; color: #4ade80; }
+        .badge-none { background-color: #3f3f46; color: #a1a1aa; }
+        
+        .parlay-stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #2d2d36;
+        }
+        .parlay-stat .val {
+            font-weight: bold;
+            color: #4ade80;
+        }
+        .alert-text {
+            color: #f87171;
+            font-size: 0.85rem;
+            margin-top: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🏀 Live Under & Parlay Calculator</h1>
+    
+    <div class="grid">
+        <!-- Live Games Input Panel -->
+        <div class="card">
+            <h2>Active Games</h2>
+            <div class="game-row header-row">
+                <div>Matchup</div>
+                <div>Current Score</div>
+                <div>Mins Left</div>
+                <div>Pre Baseline</div>
+                <div>Live Line</div>
+            </div>
+            
+            <div id="games-container">
+                <!-- JavaScript generates 4 game inputs here -->
+            </div>
+        </div>
+
+        <!-- Betting Slip & Output Panel -->
+        <div class="card">
+            <h2>Optimized Betting Slip</h2>
+            <div id="slip-outputs">
+                <div class="parlay-stat">
+                    <span>Active Legs:</span>
+                    <span id="active-legs" class="val">0 / 4</span>
+                </div>
+                <div class="parlay-stat">
+                    <span>Combined Prob:</span>
+                    <span id="joint-prob" class="val">0.0%</span>
+                </div>
+                <div class="parlay-stat">
+                    <span>Fair Parlay Odds:</span>
+                    <span id="parlay-odds" class="val">-</span>
+                </div>
+                <div class="parlay-stat" style="border: none; margin-top: 15px;">
+                    <span>System Decision:</span>
+                    <span id="system-action" class="badge badge-none">WAITING</span>
+                </div>
+                <div id="max-leg-alert" class="alert-text" style="display:none;">
+                    ⚠️ Maximum of 4 legs allowed for parlay optimization.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 4 Default sample games matching typical NBA lines
+    const games = [
+        { id: 1, name: "BOS @ NYK", score: 140, mins: 16, baseline: 220.5, line: 234.5 },
+        { id: 2, name: "LAL @ PHI", score: 90,  mins: 24, baseline: 228.0, line: 235.5 },
+        { id: 3, name: "GSW @ PHX", score: 60,  mins: 30, baseline: 232.0, line: 239.5 },
+        { id: 4, name: "MIA @ CHI", score: 110, mins: 12, baseline: 212.0, line: 214.0 }
+    ];
+
+    function init() {
+        const container = document.getElementById('games-container');
+        games.forEach(g => {
+            const row = document.createElement('div');
+            row.className = 'game-row';
+            row.innerHTML = `
+                <div style="font-weight: 500;">${g.name}</div>
+                <div><input type="number" id="score-${g.id}" value="${g.score}" oninput="calculate()"></div>
+                <div><input type="number" id="mins-${g.id}" value="${g.mins}" step="0.5" oninput="calculate()"></div>
+                <div><input type="number" id="base-${g.id}" value="${g.baseline}" step="0.5" oninput="calculate()"></div>
+                <div><input type="number" id="line-${g.id}" value="${g.line}" step="0.5" oninput="calculate()"></div>
+            `;
+            container.appendChild(row);
+        });
+        calculate();
+    }
+
+    function calculate() {
+        let viableLegsCount = 0;
+        let jointProbability = 1.0;
+
+        games.forEach(g => {
+            const currentScore = parseFloat(document.getElementById(`score-${g.id}`).value) || 0;
+            const minsRemaining = parseFloat(document.getElementById(`mins-${g.id}`).value) || 0;
+            const preGameBaseline = parseFloat(document.getElementById(`base-${g.id}`).value) || 0;
+            const vegasLiveLine = parseFloat(document.getElementById(`line-${g.id}`).value) || 0;
+
+            // 1. Time Decay Projection Formula
+            const timeRemainingRatio = minsRemaining / 48.0;
+            const projectedRemainingPoints = preGameBaseline * timeRemainingRatio;
+            const liveProjection = currentScore + projectedRemainingPoints;
+
+            // 2. Identify Under Edge
+            const edge = vegasLiveLine - liveProjection;
+            
+            // If Vegas live line is at least 4.5 points higher than our model projection, flag it.
+            if (edge >= 4.5 && minsRemaining > 0) {
+                viableLegsCount++;
+                // Sigmoid calculation mapping edge values to statistical win probability
+                const winProb = 1 / (1 + Math.exp(-0.2 * edge));
+                if (viableLegsCount <= 4) {
+                    jointProbability *= winProb;
+                }
+            }
+        });
+
+        // 3. Update the Parlay Slip UI Components
+        document.getElementById('active-legs').innerText = `${viableLegsCount} / 4`;
+        document.getElementById('max-leg-alert').style.display = viableLegsCount > 4 ? 'block' : 'none';
+
+        if (viableLegsCount > 0 && viableLegsCount <= 4) {
+            document.getElementById('joint-prob').innerText = `${(jointProbability * 100).toFixed(1)}%`;
+            
+            // Convert to Fair American Odds
+            const decimalOdds = 1 / jointProbability;
+            let americanOdds = "";
+            if (decimalOdds >= 2.0) {
+                americanOdds = `+${Math.round((decimalOdds - 1) * 100)}`;
+            } else {
+                americanOdds = `${Math.round(-100 / (decimalOdds - 1))}`;
+            }
+            
+            document.getElementById('parlay-odds').innerText = americanOdds;
+            
+            const actionBadge = document.getElementById('system-action');
+            actionBadge.innerText = viableLegsCount === 1 ? "TRIGGER SINGLE" : "TRIGGER PARLAY";
+            actionBadge.className = "badge badge-under";
+        } else {
+            document.getElementById('joint-prob').innerText = "0.0%";
+            document.getElementById('parlay-odds').innerText = "-";
+            const actionBadge = document.getElementById('system-action');
+            actionBadge.innerText = viableLegsCount > 4 ? "LEGS EXCEEDED" : "NO VALUE";
+            actionBadge.className = "badge badge-none";
+        }
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>
 
